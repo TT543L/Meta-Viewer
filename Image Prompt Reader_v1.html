@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>이미지 메타데이터 뷰어</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    .image-container { border: 1px solid #ccc; padding: 10px; margin: 10px 0; border-radius: 8px; display: flex; gap: 20px; align-items: center; }
+    img { max-width: 150px; max-height: 150px; border-radius: 4px; }
+    pre { background: #f4f4f4; padding: 10px; overflow-x: auto; max-width: 600px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>이미지 메타데이터 보기</h1>
+  <input type="file" id="fileInput" multiple accept="image/png, image/jpeg, image/webp" />
+  <div id="results"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+  <script>
+    const input = document.getElementById('fileInput');
+    const results = document.getElementById('results');
+
+    input.addEventListener('change', async (event) => {
+      results.innerHTML = ''; // 초기화
+      const files = event.target.files;
+
+      for (const file of files) {
+        const url = URL.createObjectURL(file);
+
+        const container = document.createElement('div');
+        container.className = 'image-container';
+
+        const img = document.createElement('img');
+        img.src = url;
+        container.appendChild(img);
+
+        const metaBox = document.createElement('div');
+        metaBox.innerHTML = '<p>메타데이터 불러오는 중...</p>';
+        container.appendChild(metaBox);
+
+        results.appendChild(container);
+
+        try {
+          const metadata = await exifr.parse(file) || {};
+          metaBox.innerHTML = '<pre>' + JSON.stringify(metadata, null, 2) + '</pre>';
+        } catch (error) {
+          metaBox.innerHTML = '<p style="color:red;">메타데이터를 읽을 수 없습니다.</p>';
+        }
+      }
+    });
+  </script>
+</body>
+</html>
