@@ -1,54 +1,407 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <title>이미지 메타데이터 뷰어</title>
-  <style>
-    body { font-family: sans-serif; padding: 20px; }
-    .image-container { border: 1px solid #ccc; padding: 10px; margin: 10px 0; border-radius: 8px; display: flex; gap: 20px; align-items: center; }
-    img { max-width: 150px; max-height: 150px; border-radius: 4px; }
-    pre { background: #f4f4f4; padding: 10px; overflow-x: auto; max-width: 600px; border-radius: 4px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이미지 메타데이터 뷰어</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        .controls {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .file-input-wrapper {
+            margin-bottom: 15px;
+        }
+        input[type="file"] {
+            display: block;
+            padding: 10px;
+            background: #3a3a3a;
+            border: 2px dashed #555;
+            border-radius: 4px;
+            color: #e0e0e0;
+            width: 100%;
+            cursor: pointer;
+        }
+        input[type="file"]::-webkit-file-upload-button {
+            background: #4a9eff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        .filter-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #357abd;
+        }
+        button.active {
+            background: #2d5a8f;
+        }
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 20px;
+        }
+        .image-card {
+            background: #2a2a2a;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .image-preview {
+            width: 100%;
+            height: 300px;
+            object-fit: contain;
+            background: #1a1a1a;
+        }
+        .metadata-section {
+            padding: 15px;
+        }
+        .filename {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4a9eff;
+            word-break: break-all;
+        }
+        .metadata-content {
+            max-height: 400px;
+            overflow-y: auto;
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .metadata-item {
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #3a3a3a;
+        }
+        .metadata-item:last-child {
+            border-bottom: none;
+        }
+        .metadata-key {
+            color: #ff9a56;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .metadata-value {
+            color: #e0e0e0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .no-metadata {
+            color: #888;
+            font-style: italic;
+        }
+        .stats {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            color: #e0e0e0;
+        }
+        .stat-value {
+            color: #4a9eff;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
-  <h1>이미지 메타데이터 보기</h1>
-  <input type="file" id="fileInput" multiple accept="image/png, image/jpeg, image/webp" />
-  <div id="results"></div>
+    <div class="container">
+        <h1>🖼️ 이미지 메타데이터 뷰어</h1>
+        
+        <div class="controls">
+            <div class="file-input-wrapper">
+                <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" multiple>
+            </div>
+            <div class="filter-buttons">
+                <button id="showAll" class="active">전체 보기</button>
+                <button id="showNovelAI">NovelAI 이미지만</button>
+            </div>
+        </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
-  <script>
-    const input = document.getElementById('fileInput');
-    const results = document.getElementById('results');
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-item">
+                전체: <span class="stat-value" id="totalCount">0</span>개
+            </div>
+            <div class="stat-item">
+                NovelAI: <span class="stat-value" id="novelaiCount">0</span>개
+            </div>
+            <div class="stat-item">
+                표시 중: <span class="stat-value" id="displayCount">0</span>개
+            </div>
+        </div>
 
-    input.addEventListener('change', async (event) => {
-      results.innerHTML = ''; // 초기화
-      const files = event.target.files;
+        <div class="image-grid" id="imageGrid"></div>
+    </div>
 
-      for (const file of files) {
-        const url = URL.createObjectURL(file);
+    <script>
+        let allImages = [];
+        let currentFilter = 'all';
 
-        const container = document.createElement('div');
-        container.className = 'image-container';
+        const fileInput = document.getElementById('fileInput');
+        const imageGrid = document.getElementById('imageGrid');
+        const showAllBtn = document.getElementById('showAll');
+        const showNovelAIBtn = document.getElementById('showNovelAI');
+        const statsDiv = document.getElementById('stats');
 
-        const img = document.createElement('img');
-        img.src = url;
-        container.appendChild(img);
+        fileInput.addEventListener('change', handleFiles);
+        showAllBtn.addEventListener('click', () => setFilter('all'));
+        showNovelAIBtn.addEventListener('click', () => setFilter('novelai'));
 
-        const metaBox = document.createElement('div');
-        metaBox.innerHTML = '<p>메타데이터 불러오는 중...</p>';
-        container.appendChild(metaBox);
-
-        results.appendChild(container);
-
-        try {
-          const metadata = await exifr.parse(file) || {};
-          metaBox.innerHTML = '<pre>' + JSON.stringify(metadata, null, 2) + '</pre>';
-        } catch (error) {
-          metaBox.innerHTML = '<p style="color:red;">메타데이터를 읽을 수 없습니다.</p>';
+        async function handleFiles(e) {
+            const files = Array.from(e.target.files);
+            allImages = [];
+            
+            for (const file of files) {
+                const metadata = await extractMetadata(file);
+                const imageUrl = URL.createObjectURL(file);
+                allImages.push({
+                    file,
+                    imageUrl,
+                    metadata,
+                    isNovelAI: checkNovelAI(metadata)
+                });
+            }
+            
+            updateStats();
+            renderImages();
         }
-      }
-    });
-  </script>
+
+        function checkNovelAI(metadata) {
+            const searchText = JSON.stringify(metadata).toLowerCase();
+            return searchText.includes('prompt') || 
+                   searchText.includes('description') || 
+                   searchText.includes('novelai');
+        }
+
+        async function extractMetadata(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const arr = new Uint8Array(e.target.result);
+                    const metadata = {};
+
+                    if (file.type === 'image/png') {
+                        extractPNGMetadata(arr, metadata);
+                    } else if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
+                        extractJPEGMetadata(arr, metadata);
+                    }
+
+                    resolve(metadata);
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function extractPNGMetadata(arr, metadata) {
+            let pos = 8;
+            
+            while (pos < arr.length) {
+                const length = (arr[pos] << 24) | (arr[pos+1] << 16) | (arr[pos+2] << 8) | arr[pos+3];
+                const type = String.fromCharCode(arr[pos+4], arr[pos+5], arr[pos+6], arr[pos+7]);
+                
+                if (type === 'tEXt' || type === 'iTXt' || type === 'zTXt') {
+                    const chunkData = arr.slice(pos + 8, pos + 8 + length);
+                    
+                    let keyEnd = 0;
+                    while (keyEnd < chunkData.length && chunkData[keyEnd] !== 0) keyEnd++;
+                    
+                    const key = new TextDecoder().decode(chunkData.slice(0, keyEnd));
+                    
+                    if (type === 'tEXt') {
+                        const value = new TextDecoder().decode(chunkData.slice(keyEnd + 1));
+                        metadata[key] = value;
+                    } else if (type === 'iTXt') {
+                        let offset = keyEnd + 1;
+                        const compressionFlag = chunkData[offset++];
+                        const compressionMethod = chunkData[offset++];
+                        
+                        let langEnd = offset;
+                        while (langEnd < chunkData.length && chunkData[langEnd] !== 0) langEnd++;
+                        offset = langEnd + 1;
+                        
+                        let transEnd = offset;
+                        while (transEnd < chunkData.length && chunkData[transEnd] !== 0) transEnd++;
+                        offset = transEnd + 1;
+                        
+                        const value = new TextDecoder().decode(chunkData.slice(offset));
+                        metadata[key] = value;
+                    }
+                }
+                
+                if (type === 'IEND') break;
+                pos += 12 + length;
+            }
+        }
+
+        function extractJPEGMetadata(arr, metadata) {
+            let pos = 2;
+            
+            while (pos < arr.length) {
+                if (arr[pos] !== 0xFF) break;
+                
+                const marker = arr[pos + 1];
+                pos += 2;
+                
+                if (marker === 0xD9 || marker === 0xDA) break;
+                
+                const segmentLength = (arr[pos] << 8) | arr[pos + 1];
+                
+                if (marker === 0xE1) {
+                    const exifData = arr.slice(pos + 2, pos + segmentLength);
+                    
+                    if (String.fromCharCode(...exifData.slice(0, 4)) === 'Exif') {
+                        parseEXIF(exifData.slice(6), metadata);
+                    }
+                } else if (marker === 0xFE) {
+                    const comment = new TextDecoder().decode(arr.slice(pos + 2, pos + segmentLength));
+                    metadata['Comment'] = comment;
+                }
+                
+                pos += segmentLength;
+            }
+        }
+
+        function parseEXIF(data, metadata) {
+            const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+            
+            const byteOrder = view.getUint16(0);
+            const littleEndian = byteOrder === 0x4949;
+            
+            const ifdOffset = view.getUint32(4, littleEndian);
+            parseIFD(view, ifdOffset, littleEndian, metadata);
+        }
+
+        function parseIFD(view, offset, littleEndian, metadata) {
+            const tagCount = view.getUint16(offset, littleEndian);
+            
+            const exifTags = {
+                0x010E: 'ImageDescription',
+                0x010F: 'Make',
+                0x0110: 'Model',
+                0x0131: 'Software',
+                0x013B: 'Artist',
+                0x8298: 'Copyright',
+                0x9286: 'UserComment'
+            };
+            
+            for (let i = 0; i < tagCount; i++) {
+                const entryOffset = offset + 2 + (i * 12);
+                const tag = view.getUint16(entryOffset, littleEndian);
+                const type = view.getUint16(entryOffset + 2, littleEndian);
+                const count = view.getUint32(entryOffset + 4, littleEndian);
+                const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
+                
+                if (exifTags[tag]) {
+                    try {
+                        let value;
+                        if (type === 2) {
+                            if (count <= 4) {
+                                value = String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + entryOffset + 8, count - 1));
+                            } else {
+                                value = String.fromCharCode(...new Uint8Array(view.buffer, view.byteOffset + valueOffset, count - 1));
+                            }
+                        }
+                        if (value && value.trim()) {
+                            metadata[exifTags[tag]] = value;
+                        }
+                    } catch (e) {}
+                }
+            }
+        }
+
+        function setFilter(filter) {
+            currentFilter = filter;
+            showAllBtn.classList.toggle('active', filter === 'all');
+            showNovelAIBtn.classList.toggle('active', filter === 'novelai');
+            renderImages();
+        }
+
+        function updateStats() {
+            const novelaiCount = allImages.filter(img => img.isNovelAI).length;
+            document.getElementById('totalCount').textContent = allImages.length;
+            document.getElementById('novelaiCount').textContent = novelaiCount;
+            statsDiv.style.display = allImages.length > 0 ? 'flex' : 'none';
+        }
+
+        function renderImages() {
+            const filteredImages = currentFilter === 'all' 
+                ? allImages 
+                : allImages.filter(img => img.isNovelAI);
+            
+            document.getElementById('displayCount').textContent = filteredImages.length;
+            
+            imageGrid.innerHTML = filteredImages.map((img, index) => {
+                const metadataHtml = Object.keys(img.metadata).length > 0
+                    ? Object.entries(img.metadata).map(([key, value]) => `
+                        <div class="metadata-item">
+                            <div class="metadata-key">${escapeHtml(key)}</div>
+                            <div class="metadata-value">${escapeHtml(value)}</div>
+                        </div>
+                    `).join('')
+                    : '<div class="no-metadata">메타데이터가 없습니다</div>';
+                
+                return `
+                    <div class="image-card">
+                        <img src="${img.imageUrl}" alt="${img.file.name}" class="image-preview">
+                        <div class="metadata-section">
+                            <div class="filename">${escapeHtml(img.file.name)}</div>
+                            <div class="metadata-content">
+                                ${metadataHtml}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
 </body>
 </html>
-
