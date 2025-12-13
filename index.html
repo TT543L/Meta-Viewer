@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>이미지 메타데이터 뷰어</title>
+    <title>NovelAI 이미지 메타데이터 뷰어 (향상됨)</title>
     <style>
         * {
             margin: 0;
@@ -23,6 +23,16 @@
         h1 {
             margin-bottom: 20px;
             color: #fff;
+        }
+        .info-banner {
+            background: #2a4a2a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #4a9eff;
+        }
+        .info-banner strong {
+            color: #4a9eff;
         }
         .controls {
             background: #2a2a2a;
@@ -99,6 +109,21 @@
             color: #4a9eff;
             word-break: break-all;
         }
+        .extraction-method {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+        .method-standard {
+            background: #2a5a2a;
+            color: #8f8;
+        }
+        .method-steganography {
+            background: #5a2a5a;
+            color: #f8f;
+        }
         .metadata-content {
             max-height: 400px;
             overflow-y: auto;
@@ -145,11 +170,20 @@
             color: #4a9eff;
             font-weight: bold;
         }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #4a9eff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🖼️ 이미지 메타데이터 뷰어</h1>
+        <h1>🖼️ NovelAI 이미지 메타데이터 뷰어 (향상됨)</h1>
+        
+        <div class="info-banner">
+            <strong>✨ 새로운 기능:</strong> 이제 표준 메타데이터와 숨겨진 메타데이터(스테가노그래피)를 모두 추출할 수 있습니다!
+        </div>
         
         <div class="controls">
             <div class="file-input-wrapper">
@@ -158,6 +192,7 @@
             <div class="filter-buttons">
                 <button id="showAll" class="active">전체 보기</button>
                 <button id="showNovelAI">NovelAI 이미지만</button>
+                <button id="showSteganography">숨겨진 메타데이터만</button>
             </div>
         </div>
 
@@ -169,6 +204,9 @@
                 NovelAI: <span class="stat-value" id="novelaiCount">0</span>개
             </div>
             <div class="stat-item">
+                숨겨진 메타데이터: <span class="stat-value" id="steganographyCount">0</span>개
+            </div>
+            <div class="stat-item">
                 표시 중: <span class="stat-value" id="displayCount">0</span>개
             </div>
         </div>
@@ -176,6 +214,7 @@
         <div class="image-grid" id="imageGrid"></div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script>
         let allImages = [];
         let currentFilter = 'all';
@@ -184,15 +223,19 @@
         const imageGrid = document.getElementById('imageGrid');
         const showAllBtn = document.getElementById('showAll');
         const showNovelAIBtn = document.getElementById('showNovelAI');
+        const showSteganographyBtn = document.getElementById('showSteganography');
         const statsDiv = document.getElementById('stats');
 
         fileInput.addEventListener('change', handleFiles);
         showAllBtn.addEventListener('click', () => setFilter('all'));
         showNovelAIBtn.addEventListener('click', () => setFilter('novelai'));
+        showSteganographyBtn.addEventListener('click', () => setFilter('steganography'));
 
         async function handleFiles(e) {
             const files = Array.from(e.target.files);
             allImages = [];
+            
+            imageGrid.innerHTML = '<div class="loading">메타데이터 추출 중...</div>';
             
             for (const file of files) {
                 const metadata = await extractMetadata(file);
@@ -200,8 +243,10 @@
                 allImages.push({
                     file,
                     imageUrl,
-                    metadata,
-                    isNovelAI: checkNovelAI(metadata)
+                    metadata: metadata.data,
+                    extractionMethod: metadata.method,
+                    isNovelAI: checkNovelAI(metadata.data),
+                    hasSteganography: metadata.method === 'steganography'
                 });
             }
             
@@ -213,29 +258,45 @@
             const searchText = JSON.stringify(metadata).toLowerCase();
             return searchText.includes('prompt') || 
                    searchText.includes('description') || 
-                   searchText.includes('novelai');
+                   searchText.includes('novelai') ||
+                   searchText.includes('steps') ||
+                   searchText.includes('sampler');
         }
 
         async function extractMetadata(file) {
             return new Promise((resolve) => {
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = async function(e) {
                     const arr = new Uint8Array(e.target.result);
-                    const metadata = {};
+                    let metadata = {};
+                    let method = 'none';
 
                     if (file.type === 'image/png') {
-                        extractPNGMetadata(arr, metadata);
+                        // Try standard PNG metadata first
+                        metadata = extractPNGMetadata(arr);
+                        if (Object.keys(metadata).length > 0) {
+                            method = 'standard';
+                        } else {
+                            // Try steganography extraction
+                            const hiddenData = await extractSteganographicData(arr);
+                            if (hiddenData) {
+                                metadata = hiddenData;
+                                method = 'steganography';
+                            }
+                        }
                     } else if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
-                        extractJPEGMetadata(arr, metadata);
+                        metadata = extractJPEGMetadata(arr);
+                        method = Object.keys(metadata).length > 0 ? 'standard' : 'none';
                     }
 
-                    resolve(metadata);
+                    resolve({ data: metadata, method });
                 };
                 reader.readAsArrayBuffer(file);
             });
         }
 
-        function extractPNGMetadata(arr, metadata) {
+        function extractPNGMetadata(arr) {
+            const metadata = {};
             let pos = 8;
             
             while (pos < arr.length) {
@@ -274,9 +335,110 @@
                 if (type === 'IEND') break;
                 pos += 12 + length;
             }
+            
+            return metadata;
         }
 
-        function extractJPEGMetadata(arr, metadata) {
+        async function extractSteganographicData(pngData) {
+            try {
+                // Load image to canvas
+                const blob = new Blob([pngData], { type: 'image/png' });
+                const img = await createImageBitmap(blob);
+                
+                // Check size limit (similar to original code: 16777216 pixels = 4096x4096)
+                if (img.width * img.height > 16777216) {
+                    return null;
+                }
+                
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                
+                // Extract LSB from alpha channel
+                const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                const alphaLSBs = [];
+                
+                for (let i = 3; i < imageData.data.length; i += 4) {
+                    alphaLSBs.push(imageData.data[i] & 1);
+                }
+                
+                // Read header to check if it's steganographic data
+                let bitPos = 0;
+                
+                function readByte() {
+                    let byte = 0;
+                    for (let i = 0; i < 8; i++) {
+                        const rowIndex = Math.floor(bitPos / img.height);
+                        const colIndex = bitPos % img.height;
+                        byte |= alphaLSBs[colIndex * img.width + rowIndex] << (7 - i);
+                        bitPos++;
+                    }
+                    return byte;
+                }
+                
+                // Check for magic header "stealth_pngcomp"
+                const header = [];
+                for (let i = 0; i < 15; i++) {
+                    header.push(readByte());
+                }
+                
+                const headerStr = String.fromCharCode(...header);
+                if (headerStr !== 'stealth_pngcomp') {
+                    return null;
+                }
+                
+                // Read data length (4 bytes, big-endian)
+                const lengthBytes = [];
+                for (let i = 0; i < 4; i++) {
+                    lengthBytes.push(readByte());
+                }
+                const dataLength = (lengthBytes[0] << 24) | (lengthBytes[1] << 16) | 
+                                  (lengthBytes[2] << 8) | lengthBytes[3];
+                
+                // Read compressed data
+                const compressedData = [];
+                for (let i = 0; i < dataLength / 8; i++) {
+                    compressedData.push(readByte());
+                }
+                
+                // Decompress using pako
+                const compressedUint8 = new Uint8Array(compressedData);
+                
+                let jsonStr;
+                try {
+                    // First try to decompress with pako
+                    if (typeof pako !== 'undefined') {
+                        try {
+                            const decompressed = pako.inflate(compressedUint8);
+                            jsonStr = new TextDecoder().decode(decompressed);
+                        } catch (pakoError) {
+                            // If pako fails, try direct decode (might not be compressed)
+                            console.log('Pako decompression failed, trying direct decode:', pakoError);
+                            jsonStr = new TextDecoder().decode(compressedUint8);
+                        }
+                    } else {
+                        // Pako not available, try direct decode
+                        jsonStr = new TextDecoder().decode(compressedUint8);
+                    }
+                    
+                    // Parse and return JSON
+                    return JSON.parse(jsonStr);
+                    
+                } catch (error) {
+                    console.error('Failed to parse steganographic data:', error);
+                    return null;
+                }
+                
+            } catch (error) {
+                console.error('Steganography extraction error:', error);
+                return null;
+            }
+        }
+
+        function extractJPEGMetadata(arr) {
+            const metadata = {};
             let pos = 2;
             
             while (pos < arr.length) {
@@ -302,6 +464,8 @@
                 
                 pos += segmentLength;
             }
+            
+            return metadata;
         }
 
         function parseEXIF(data, metadata) {
@@ -356,24 +520,37 @@
             currentFilter = filter;
             showAllBtn.classList.toggle('active', filter === 'all');
             showNovelAIBtn.classList.toggle('active', filter === 'novelai');
+            showSteganographyBtn.classList.toggle('active', filter === 'steganography');
             renderImages();
         }
 
         function updateStats() {
             const novelaiCount = allImages.filter(img => img.isNovelAI).length;
+            const steganographyCount = allImages.filter(img => img.hasSteganography).length;
             document.getElementById('totalCount').textContent = allImages.length;
             document.getElementById('novelaiCount').textContent = novelaiCount;
+            document.getElementById('steganographyCount').textContent = steganographyCount;
             statsDiv.style.display = allImages.length > 0 ? 'flex' : 'none';
         }
 
         function renderImages() {
-            const filteredImages = currentFilter === 'all' 
-                ? allImages 
-                : allImages.filter(img => img.isNovelAI);
+            let filteredImages = allImages;
+            
+            if (currentFilter === 'novelai') {
+                filteredImages = allImages.filter(img => img.isNovelAI);
+            } else if (currentFilter === 'steganography') {
+                filteredImages = allImages.filter(img => img.hasSteganography);
+            }
             
             document.getElementById('displayCount').textContent = filteredImages.length;
             
             imageGrid.innerHTML = filteredImages.map((img, index) => {
+                const methodBadge = img.extractionMethod === 'steganography' 
+                    ? '<span class="extraction-method method-steganography">🔐 숨겨진 메타데이터</span>'
+                    : img.extractionMethod === 'standard'
+                    ? '<span class="extraction-method method-standard">📄 표준 메타데이터</span>'
+                    : '';
+                
                 const metadataHtml = Object.keys(img.metadata).length > 0
                     ? Object.entries(img.metadata).map(([key, value]) => `
                         <div class="metadata-item">
@@ -388,6 +565,7 @@
                         <img src="${img.imageUrl}" alt="${img.file.name}" class="image-preview">
                         <div class="metadata-section">
                             <div class="filename">${escapeHtml(img.file.name)}</div>
+                            ${methodBadge}
                             <div class="metadata-content">
                                 ${metadataHtml}
                             </div>
